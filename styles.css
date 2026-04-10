@@ -1,81 +1,9 @@
-/* 价格转换器样式 */
-
-.price-converter-info {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 6px;
-  margin-left: 0;
-  padding: 8px 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 8px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  animation: slideIn 0.3s ease-out;
-  backdrop-filter: blur(10px);
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.price-converter-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: #ffffff;
-  white-space: nowrap;
-}
-
-.price-converter-icon {
-  font-size: 16px;
-  font-weight: bold;
-  min-width: 20px;
-  text-align: center;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
-}
-
-.price-converter-value {
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .price-converter-info {
-    padding: 6px 10px;
-    gap: 3px;
-  }
-
-  .price-converter-item {
-    font-size: 12px;
-  }
-
-  .price-converter-icon {
-    font-size: 14px;
-  }
-}
-
-/* 深色模式支持 */
-@media (prefers-color-scheme: dark) {
-  .price-converter-info {
-    background: linear-gradient(135deg, #434343 0%, #000000 100%);
-    box-shadow: 0 2px 12px rgba(255, 255, 255, 0.1);
-  }
-}
-
-/* 悬停效果 */
-.price-converter-info:hover {
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-  transition: all 0.2s ease-in-out;
-}
+/*
+ * Price Converter — content script styles
+ *
+ * Badge styles are now embedded directly in content.js as the BADGE_CSS constant
+ * and injected into each badge's Shadow DOM, which fully isolates them from the host
+ * page's CSS. This file is no longer referenced in manifest.json content_scripts.
+ *
+ * Keeping this file for reference / future use.
+ */

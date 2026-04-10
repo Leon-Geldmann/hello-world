@@ -1,208 +1,256 @@
-// 内容脚本 - 检测网页价格并添加转换显示
+// content.js — Price converter content script.
+// constants.js (ASSET_REGISTRY, DEFAULT_SETTINGS, FIAT_TO_USD) is loaded before this.
 
-let currentPrices = null;
-const processedElements = new WeakSet();
-
-// 价格匹配的正则表达式
-const pricePatterns = [
-  // 美元格式: $123.45, $1,234.56
-  /\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-  // 人民币格式: ¥123.45, ￥1,234.56, 123.45元
-  /[¥￥]\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-  /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*元/g,
-  // 欧元格式: €123.45, 123.45€
-  /€\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-  /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*€/g,
-  // 英镑格式: £123.45
-  /£\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-  // 通用格式（带货币代码）: USD 123.45, CNY 123.45
-  /(USD|CNY|EUR|GBP|JPY)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/gi,
+// Price patterns WITHOUT /g flag to avoid lastIndex state bugs.
+// Each entry declares its currency statically where possible.
+const PRICE_PATTERNS = [
+  { re: /\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/, currency: 'USD' },
+  { re: /[¥￥]\s*(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/, currency: 'CNY' },
+  { re: /(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)\s*元/, currency: 'CNY' },
+  { re: /€\s*(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/, currency: 'EUR' },
+  { re: /(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)\s*€/, currency: 'EUR' },
+  { re: /£\s*(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/, currency: 'GBP' },
+  // Currency code prefix: "USD 123.45" — currency extracted from match group 1
+  { re: /(USD|CNY|EUR|GBP|JPY)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/, currency: null },
 ];
 
-// 货币符号到USD的转换率（这些是示例值，实际应该从API获取）
-const currencyRates = {
-  'USD': 1,
-  '$': 1,
-  'CNY': 0.14,
-  '¥': 0.14,
-  '￥': 0.14,
-  '元': 0.14,
-  'EUR': 1.09,
-  '€': 1.09,
-  'GBP': 1.27,
-  '£': 1.27,
-  'JPY': 0.0067,
-};
+// Tags whose text content should never be processed
+const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'CODE', 'PRE', 'HEAD']);
 
-// 初始化 - 获取当前价格
-async function init() {
-  currentPrices = await new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: 'getPrices' }, (response) => {
-      resolve(response);
-    });
-  });
+// Tags where inserting a sibling div would produce invalid HTML
+const UNSAFE_PARENT_TAGS = new Set(['TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH', 'DL', 'OL', 'UL']);
 
-  if (currentPrices && currentPrices.bitcoin && currentPrices.gold) {
-    console.log('价格转换器已激活:', currentPrices);
-    scanAndConvertPrices();
-  }
+// MD3-inspired badge styles injected into each shadow root
+const BADGE_CSS = `
+:host { display: block; margin-top: 4px; }
+.badge {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 12px;
+  background: #FFFBFE;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3), 0 2px 6px 2px rgba(0,0,0,0.15);
+  font-family: system-ui, Roboto, 'Segoe UI', sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
 }
-
-// 监听来自background的价格更新消息
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'pricesUpdated') {
-    currentPrices = request.prices;
-    console.log('收到价格更新:', currentPrices);
-    scanAndConvertPrices();
-  }
-});
-
-// 扫描并转换页面中的价格
-function scanAndConvertPrices() {
-  if (!currentPrices || !currentPrices.bitcoin || !currentPrices.gold) {
-    return;
-  }
-
-  // 获取所有文本节点
-  const walker = document.createTreeWalker(
-    document.body,
-    NodeFilter.SHOW_TEXT,
-    {
-      acceptNode: function(node) {
-        // 跳过脚本、样式和已处理的元素
-        if (node.parentElement.tagName === 'SCRIPT' ||
-            node.parentElement.tagName === 'STYLE' ||
-            node.parentElement.classList.contains('price-converter-info')) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    }
-  );
-
-  const textNodes = [];
-  while (walker.nextNode()) {
-    textNodes.push(walker.currentNode);
-  }
-
-  // 处理每个文本节点
-  textNodes.forEach(node => {
-    const text = node.textContent;
-    let hasPrice = false;
-
-    // 检查是否包含价格
-    for (const pattern of pricePatterns) {
-      if (pattern.test(text)) {
-        hasPrice = true;
-        break;
-      }
-    }
-
-    if (hasPrice && !processedElements.has(node.parentElement)) {
-      processTextNode(node);
-    }
-  });
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #1C1B1F;
 }
-
-// 处理包含价格的文本节点
-function processTextNode(textNode) {
-  const parent = textNode.parentElement;
-  if (!parent || processedElements.has(parent)) {
-    return;
-  }
-
-  const text = textNode.textContent;
-  let priceInfo = extractPrice(text);
-
-  if (priceInfo) {
-    processedElements.add(parent);
-    addPriceConversion(parent, priceInfo);
-  }
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  flex-shrink: 0;
+  letter-spacing: -0.5px;
 }
+.amount { font-weight: 500; font-size: 12px; }
+.unit { font-size: 11px; color: #49454F; }
+@media (prefers-color-scheme: dark) {
+  .badge {
+    background: #2B2930;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.5), 0 2px 6px 2px rgba(0,0,0,0.3);
+  }
+  .row { color: #E6E1E5; }
+  .unit { color: #CAC4D0; }
+}
+`;
 
-// 提取价格信息
+let currentPrices = null;
+let currentSettings = { ...DEFAULT_SETTINGS };
+let scanDebounceTimer = null;
+let pendingNodes = [];
+
 function extractPrice(text) {
-  for (const pattern of pricePatterns) {
-    const match = pattern.exec(text);
-    if (match) {
-      let amount, currency;
-
-      if (match[0].includes('USD') || match[0].includes('CNY') ||
-          match[0].includes('EUR') || match[0].includes('GBP')) {
-        currency = match[1].toUpperCase();
-        amount = parseFloat(match[2].replace(/,/g, ''));
-      } else {
-        amount = parseFloat(match[1].replace(/,/g, ''));
-        // 推断货币
-        if (match[0].includes('$')) currency = 'USD';
-        else if (match[0].includes('¥') || match[0].includes('￥') || match[0].includes('元')) currency = 'CNY';
-        else if (match[0].includes('€')) currency = 'EUR';
-        else if (match[0].includes('£')) currency = 'GBP';
-        else currency = 'USD';
-      }
-
-      // 重置正则表达式
-      pattern.lastIndex = 0;
-
-      return { amount, currency };
+  for (const { re, currency } of PRICE_PATTERNS) {
+    const m = re.exec(text);
+    if (!m) continue;
+    if (currency === null) {
+      // Currency-code pattern: group 1 = currency code, group 2 = amount
+      return { amount: parseFloat(m[2].replace(/,/g, '')), currency: m[1].toUpperCase() };
     }
+    return { amount: parseFloat(m[1].replace(/,/g, '')), currency };
   }
   return null;
 }
 
-// 添加价格转换显示
-function addPriceConversion(element, priceInfo) {
-  const { amount, currency } = priceInfo;
+function convertAsset(amountUSD, assetKey) {
+  const price = currentPrices?.[assetKey];
+  if (!price) return null;
+  const ratio = amountUSD / price;
 
-  // 转换为USD
-  const rate = currencyRates[currency] || 1;
-  const amountInUSD = amount * rate;
-
-  // 计算比特币和黄金等值
-  const btcAmount = amountInUSD / currentPrices.bitcoin;
-  const goldOunces = amountInUSD / currentPrices.gold;
-  const goldGrams = goldOunces * 31.1035; // 1盎司 = 31.1035克
-
-  // 创建转换信息元素
-  const converterDiv = document.createElement('div');
-  converterDiv.className = 'price-converter-info';
-  converterDiv.innerHTML = `
-    <div class="price-converter-item">
-      <span class="price-converter-icon">₿</span>
-      <span class="price-converter-value">${btcAmount.toFixed(8)} BTC</span>
-    </div>
-    <div class="price-converter-item">
-      <span class="price-converter-icon">🏆</span>
-      <span class="price-converter-value">${goldGrams.toFixed(2)} 克黄金</span>
-    </div>
-  `;
-
-  // 插入到原价格元素后面
-  if (element.nextSibling) {
-    element.parentNode.insertBefore(converterDiv, element.nextSibling);
-  } else {
-    element.parentNode.appendChild(converterDiv);
+  switch (assetKey) {
+    case 'gold':
+      return currentSettings.goldUnit === 'g'
+        ? { amount: ratio * 31.1035, unit: 'g Gold' }
+        : { amount: ratio, unit: 'oz Gold' };
+    case 'silver':
+      return currentSettings.silverUnit === 'g'
+        ? { amount: ratio * 31.1035, unit: 'g Silver' }
+        : { amount: ratio, unit: 'oz Silver' };
+    case 'bitcoin':
+      return currentSettings.bitcoinUnit === 'sat'
+        ? { amount: Math.round(ratio * 1e8), unit: 'sat' }
+        : { amount: ratio, unit: 'BTC' };
+    case 'ethereum': return { amount: ratio, unit: 'ETH' };
+    case 'dogecoin': return { amount: ratio, unit: 'DOGE' };
+    case 'xrp':      return { amount: ratio, unit: 'XRP' };
+    case 'xlm':      return { amount: ratio, unit: 'XLM' };
+    default: return null;
   }
 }
 
-// 观察DOM变化
+function formatAmount(amount, unit) {
+  if (unit === 'sat') return amount.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  if (unit === 'BTC') return amount.toFixed(6);
+  if (unit === 'ETH') return amount.toFixed(4);
+  if (unit === 'DOGE' || unit === 'XRP' || unit === 'XLM') return amount.toFixed(2);
+  // Metals: grams or oz
+  return amount < 0.01 ? amount.toFixed(4) : amount.toFixed(2);
+}
+
+function createBadge(amountUSD) {
+  const enabledAssets = ASSET_REGISTRY.filter(a => currentSettings.enabledAssets.includes(a.key));
+  const rows = [];
+  for (const asset of enabledAssets) {
+    const converted = convertAsset(amountUSD, asset.key);
+    if (converted) rows.push({ asset, converted });
+  }
+  if (rows.length === 0) return null;
+
+  const host = document.createElement('div');
+  host.setAttribute('data-pc-badge', '');
+  const shadow = host.attachShadow({ mode: 'open' });
+
+  const styleEl = document.createElement('style');
+  styleEl.textContent = BADGE_CSS;
+
+  const badge = document.createElement('div');
+  badge.className = 'badge';
+
+  for (const { asset, converted } of rows) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.style.setProperty('--accent', asset.color);
+
+    const icon = document.createElement('span');
+    icon.className = 'icon';
+    icon.textContent = asset.icon;
+
+    const amountEl = document.createElement('span');
+    amountEl.className = 'amount';
+    amountEl.textContent = formatAmount(converted.amount, converted.unit);
+
+    const unitEl = document.createElement('span');
+    unitEl.className = 'unit';
+    unitEl.textContent = converted.unit;
+
+    row.append(icon, amountEl, unitEl);
+    badge.appendChild(row);
+  }
+
+  shadow.append(styleEl, badge);
+  return host;
+}
+
+function scanRoot(root) {
+  if (!currentPrices || currentSettings.enabledAssets.length === 0) return;
+  if (!(root instanceof Element)) return;
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const p = node.parentElement;
+      if (!p) return NodeFilter.FILTER_SKIP;
+      if (SKIP_TAGS.has(p.tagName)) return NodeFilter.FILTER_SKIP;
+      if (p.hasAttribute('data-pc-badge') || p.hasAttribute('data-pc-processed')) return NodeFilter.FILTER_SKIP;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  const toProcess = [];
+  while (walker.nextNode()) toProcess.push(walker.currentNode);
+
+  for (const node of toProcess) {
+    const parent = node.parentElement;
+    if (!parent || parent.hasAttribute('data-pc-processed')) continue;
+    if (!parent.parentElement || UNSAFE_PARENT_TAGS.has(parent.parentElement.tagName)) continue;
+
+    const priceInfo = extractPrice(node.textContent);
+    if (!priceInfo || priceInfo.amount < 0.01) continue;
+
+    const usdRate = FIAT_TO_USD[priceInfo.currency] ?? 1;
+    const amountUSD = priceInfo.amount * usdRate;
+
+    const badge = createBadge(amountUSD);
+    if (!badge) continue;
+
+    parent.setAttribute('data-pc-processed', '');
+    parent.insertAdjacentElement('afterend', badge);
+  }
+}
+
+function refreshAllBadges() {
+  document.querySelectorAll('[data-pc-badge]').forEach(el => el.remove());
+  document.querySelectorAll('[data-pc-processed]').forEach(el => el.removeAttribute('data-pc-processed'));
+  scanRoot(document.body);
+}
+
+async function init() {
+  try {
+    const [prices, syncResult] = await Promise.all([
+      chrome.runtime.sendMessage({ type: 'getPrices' }),
+      chrome.storage.sync.get(['settings']),
+    ]);
+    currentPrices = prices;
+    currentSettings = { ...DEFAULT_SETTINGS, ...(syncResult.settings ?? {}) };
+  } catch (_e) {
+    // Background not yet ready; will receive prices via pricesUpdated message
+    const syncResult = await chrome.storage.sync.get(['settings']).catch(() => ({}));
+    currentSettings = { ...DEFAULT_SETTINGS, ...(syncResult.settings ?? {}) };
+  }
+  scanRoot(document.body);
+}
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'pricesUpdated') {
+    currentPrices = msg.prices;
+    refreshAllBadges();
+  }
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && changes.settings) {
+    currentSettings = { ...DEFAULT_SETTINGS, ...(changes.settings.newValue ?? {}) };
+    refreshAllBadges();
+  }
+});
+
 const observer = new MutationObserver((mutations) => {
-  // 防抖处理
-  clearTimeout(observer.timeout);
-  observer.timeout = setTimeout(() => {
-    scanAndConvertPrices();
+  for (const mutation of mutations) {
+    for (const node of mutation.addedNodes) {
+      if (node.nodeType === Node.ELEMENT_NODE && !node.hasAttribute('data-pc-badge')) {
+        pendingNodes.push(node);
+      }
+    }
+  }
+  clearTimeout(scanDebounceTimer);
+  scanDebounceTimer = setTimeout(() => {
+    const batch = pendingNodes.splice(0);
+    batch.forEach(scanRoot);
   }, 500);
 });
 
-// 启动观察
-observer.observe(document.body, {
-  childList: true,
-  subtree: true
-});
+observer.observe(document.body, { childList: true, subtree: true });
 
-// 页面加载完成后初始化
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
-}
+init();

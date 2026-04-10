@@ -1,15 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "价格转换器 - 黄金/比特币",
-  "version": "1.0.0",
-  "description": "在网页商品价格下方显示以黄金和比特币计价的等值价格，每分钟自动更新",
+  "name": "Price Converter - Gold, Silver & Crypto",
+  "version": "2.0.0",
+  "description": "Shows gold, silver, Bitcoin, Ethereum and more price equivalents below product prices on any webpage. Updates every minute.",
   "permissions": [
     "storage",
     "alarms"
   ],
   "host_permissions": [
-    "https://api.coingecko.com/*",
-    "https://api.metalpriceapi.com/*"
+    "https://api.coingecko.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -17,8 +16,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["styles.css"],
+      "js": ["constants.js", "content.js"],
       "run_at": "document_idle"
     }
   ],
@@ -29,6 +27,10 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
   },
   "icons": {
     "16": "icons/icon16.png",

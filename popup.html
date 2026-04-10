@@ -1,119 +1,165 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>价格转换器</title>
+  <title>Price Converter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    :root {
+      --md-primary: #6750A4;
+      --md-on-primary: #FFFFFF;
+      --md-surface: #FFFBFE;
+      --md-on-surface: #1C1B1F;
+      --md-surface-variant: #E7E0EC;
+      --md-on-surface-variant: #49454F;
+      --md-outline: #79747E;
     }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --md-primary: #D0BCFF;
+        --md-on-primary: #381E72;
+        --md-surface: #1C1B1F;
+        --md-on-surface: #E6E1E5;
+        --md-surface-variant: #49454F;
+        --md-on-surface-variant: #CAC4D0;
+        --md-outline: #938F99;
+      }
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      width: 320px;
-      padding: 20px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: #ffffff;
+      width: 340px;
+      background: var(--md-surface);
+      color: var(--md-on-surface);
+      font-family: 'Roboto', system-ui, sans-serif;
     }
 
-    h1 {
-      font-size: 20px;
-      margin-bottom: 20px;
-      text-align: center;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    }
-
-    .price-card {
-      background: rgba(255, 255, 255, 0.15);
-      backdrop-filter: blur(10px);
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 12px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    }
-
-    .price-card h2 {
-      font-size: 14px;
-      margin-bottom: 8px;
-      opacity: 0.9;
+    .top-bar {
       display: flex;
       align-items: center;
-      gap: 8px;
+      justify-content: space-between;
+      padding: 12px 8px 12px 16px;
+      background: var(--md-primary);
+      color: var(--md-on-primary);
     }
 
-    .price-card .icon {
-      font-size: 20px;
+    .top-bar h1 {
+      font-size: 18px;
+      font-weight: 500;
+      letter-spacing: 0.15px;
     }
 
-    .price-card .value {
-      font-size: 24px;
-      font-weight: bold;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    }
+    .top-bar-actions { display: flex; gap: 4px; }
 
-    .price-card .label {
-      font-size: 12px;
-      opacity: 0.8;
-      margin-top: 4px;
-    }
-
-    .update-info {
-      text-align: center;
-      font-size: 12px;
-      opacity: 0.8;
-      margin-top: 16px;
-      padding-top: 16px;
-      border-top: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .loading {
-      text-align: center;
-      padding: 20px;
-      font-size: 14px;
-    }
-
-    .refresh-btn {
-      width: 100%;
-      padding: 12px;
-      margin-top: 12px;
-      background: rgba(255, 255, 255, 0.2);
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
       border: none;
-      border-radius: 8px;
-      color: #ffffff;
-      font-size: 14px;
-      font-weight: 600;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--md-on-primary);
       cursor: pointer;
-      transition: all 0.3s ease;
+      transition: background 0.2s;
+    }
+    .icon-btn:hover { background: rgba(255,255,255,0.12); }
+    .icon-btn .material-symbols-outlined { font-size: 22px; }
+
+    .asset-list { padding: 8px; }
+
+    .asset-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      margin-bottom: 4px;
+      background: var(--md-surface-variant);
     }
 
-    .refresh-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
-      transform: scale(1.02);
+    .asset-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
     }
 
-    .refresh-btn:active {
-      transform: scale(0.98);
+    .asset-info { flex: 1; min-width: 0; }
+
+    .asset-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--md-on-surface-variant);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
-    .error {
-      background: rgba(255, 0, 0, 0.2);
-      padding: 12px;
-      border-radius: 8px;
+    .asset-price {
+      font-size: 16px;
+      font-weight: 500;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 16px 12px;
+      font-size: 12px;
+      color: var(--md-on-surface-variant);
+      border-top: 1px solid var(--md-outline);
+      opacity: 0.8;
+    }
+
+    .status-msg {
+      padding: 24px 16px;
+      text-align: center;
+      font-size: 14px;
+      color: var(--md-on-surface-variant);
+    }
+
+    .empty-msg {
+      padding: 16px;
       text-align: center;
       font-size: 13px;
+      color: var(--md-on-surface-variant);
+      line-height: 1.5;
     }
   </style>
 </head>
 <body>
-  <h1>💰 价格转换器</h1>
-
-  <div id="content">
-    <div class="loading">正在加载价格数据...</div>
+  <div class="top-bar">
+    <h1>Price Converter</h1>
+    <div class="top-bar-actions">
+      <button class="icon-btn" id="refreshBtn" title="Refresh prices">
+        <span class="material-symbols-outlined">refresh</span>
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="Settings">
+        <span class="material-symbols-outlined">settings</span>
+      </button>
+    </div>
   </div>
 
+  <div id="assetList" class="asset-list">
+    <div class="status-msg">Loading prices…</div>
+  </div>
+
+  <div class="footer" id="updateTime">Not yet updated</div>
+
+  <script src="constants.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
